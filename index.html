@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OCR 识别系统 · 前端</title>
+  <meta name="description" content="OCR 识别系统前端 —— 一体化智慧储运分拣系统前端层（UI 组件 / 状态管理 / 路由 / API 调用）" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <!-- ========== 顶部导航栏（路由） ========== -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">🔍</span>
+      <div class="brand-text">
+        <h1>OCR 识别系统</h1>
+        <span class="version-badge" id="versionBadge">v3.2</span>
+      </div>
+    </div>
+    <nav class="nav-tabs" id="navTabs">
+      <button class="nav-tab active" data-route="image">🖼️ 图片识别</button>
+      <button class="nav-tab" data-route="video">🎬 视频识别</button>
+      <button class="nav-tab" data-route="architecture">🏗️ 系统架构</button>
+      <button class="nav-tab" data-route="about">📘 关于</button>
+    </nav>
+    <div class="conn-status" id="connStatus">
+      <span class="dot"></span>
+      <span id="connText">未连接后端</span>
+    </div>
+  </header>
+
+  <!-- ========== 页面容器（前端路由，SPA 多视图） ========== -->
+  <main class="container">
+
+    <!-- 图片识别视图 -->
+    <section id="view-image" class="view active">
+      <div class="card">
+        <div class="card-head">
+          <h2>🖼️ 图片识别</h2>
+          <p class="desc">上传图片，调用后端 OCR 引擎（Unlimited-OCR）识别文本</p>
+        </div>
+
+        <!-- 上传组件（UI 组件） -->
+        <div class="upload-zone" id="imageDropZone">
+          <input type="file" id="imageFile" accept="image/*" hidden />
+          <div class="upload-inner">
+            <span class="upload-icon">📁</span>
+            <p>点击选择或拖拽图片到此处</p>
+            <p class="hint">支持 JPG / PNG / BMP / WEBP</p>
+          </div>
+        </div>
+
+        <div id="imagePreviewWrap" class="preview-wrap hidden">
+          <img id="imagePreview" alt="待识别图片预览" />
+        </div>
+
+        <!-- 识别参数（API 请求体） -->
+        <div class="params-row">
+          <label class="switch-label">
+            <input type="checkbox" id="lowVram" />
+            <span>低显存模式</span>
+          </label>
+        </div>
+
+        <div class="action-row">
+          <button class="btn primary" id="btnRecognize" disabled>🚀 开始识别</button>
+          <button class="btn ghost" id="btnClearImage">🗑️ 清空</button>
+        </div>
+      </div>
+
+      <!-- 识别结果卡片 -->
+      <div id="imageResult" class="card result-card hidden">
+        <div class="card-head">
+          <h2>📄 识别结果</h2>
+          <span class="badge" id="imageCost"></span>
+        </div>
+        <div class="result-body">
+          <div class="result-img-wrap"><img id="resultImage" alt="识别图片" /></div>
+          <pre class="result-text" id="imageResultText">（等待识别…）</pre>
+        </div>
+        <div class="action-row">
+          <button class="btn" id="btnCopyImage">📋 复制</button>
+          <button class="btn" id="btnDownloadImage">⬇️ 下载 .txt</button>
+        </div>
+      </div>
+
+      <!-- 历史记录（状态管理 localStorage） -->
+      <div class="card">
+        <div class="card-head">
+          <h2>🗂️ 识别历史</h2>
+          <button class="btn tiny ghost" id="btnClearHistory">清空</button>
+        </div>
+        <ul id="imageHistory" class="history-list"></ul>
+      </div>
+    </section>
+
+    <!-- 视频识别视图 -->
+    <section id="view-video" class="view">
+      <div class="card">
+        <div class="card-head">
+          <h2>🎬 视频抽帧识别</h2>
+          <p class="desc">按时间间隔抽帧，调用后端 OCR 引擎（PaddleOCR）识别</p>
+        </div>
+
+        <div class="form-grid">
+          <label>起始时间
+            <input type="text" id="vidStart" value="0:00:00" placeholder="时:分:秒" />
+          </label>
+          <label>结束时间
+            <input type="text" id="vidEnd" value="0:00:05" placeholder="时:分:秒" />
+          </label>
+          <label>抽帧间隔（秒）
+            <input type="number" id="vidInterval" value="5" min="1" />
+          </label>
+        </div>
+
+        <div class="upload-zone small" id="videoDropZone">
+          <input type="file" id="videoFile" accept="video/*" hidden />
+          <div class="upload-inner">
+            <span class="upload-icon">🎞️</span>
+            <p>点击选择视频</p>
+          </div>
+        </div>
+        <p class="file-name" id="videoFileName">未选择视频</p>
+
+        <div class="action-row">
+          <button class="btn primary" id="btnVideoRecognize" disabled>🚀 开始抽帧识别</button>
+          <button class="btn ghost" id="btnClearVideo">🗑️ 清空</button>
+        </div>
+      </div>
+
+      <div id="videoResult" class="card result-card hidden">
+        <div class="card-head"><h2>📋 识别结果</h2></div>
+        <div class="table-wrap">
+          <table id="videoResultTable">
+            <thead><tr><th>时间</th><th>上部数字</th><th>下部数字</th><th>置信度</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 系统架构视图 -->
+    <section id="view-architecture" class="view">
+      <div class="card">
+        <div class="card-head">
+          <h2>🏗️ 系统架构</h2>
+          <p class="desc">一体化智慧储运分拣系统 —— 前后端分离架构</p>
+        </div>
+        <img class="arch-img" src="assets/architecture.png" alt="系统架构图" />
+        <div class="arch-layers">
+          <div class="layer">
+            <h3>🎨 前端层 <small>（本项目 / 您的职责）</small></h3>
+            <ul>
+              <li>前端框架：Vue / React / Angular（本页为原生 HTML/CSS/JS 演示）</li>
+              <li>UI 组件：上传组件、结果卡片、状态指示器</li>
+              <li>状态管理：页面状态 + localStorage 历史记录</li>
+              <li>路由：单页应用 Tab 视图切换</li>
+              <li>API 调用：fetch 封装，对接后端 RESTful API / JSON</li>
+              <li>请求（Request）/ 响应（Response）处理</li>
+            </ul>
+          </div>
+          <div class="layer">
+            <h3>⚙️ 后端服务</h3>
+            <ul>
+              <li>框架：Spring Boot / Node.js / Django</li>
+              <li>分层：Controller → Service → DAO</li>
+              <li>通信：HTTPS / RESTful API / JSON</li>
+            </ul>
+          </div>
+          <div class="layer">
+            <h3>🗄️ 数据库层</h3>
+            <ul>
+              <li>MySQL（关系数据）、Redis（缓存/状态）、MongoDB（文档）</li>
+              <li>文件/对象存储、日志、消息队列、支付、记录</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 关于视图 -->
+    <section id="view-about" class="view">
+      <div class="card">
+        <div class="card-head">
+          <h2>📘 关于本项目</h2>
+        </div>
+        <div class="about-body">
+          <p><strong>OCR 识别系统</strong> —— 一体化智慧储运分拣系统的前端部分。</p>
+          <p>本页面为<strong>纯静态前端</strong>，可部署到 GitHub Pages 直接访问。</p>
+          <p>默认以<strong>演示模式</strong>运行（内置示例数据）；配置后端 API 地址后，可对接真实 OCR 引擎（图片=Unlimited-OCR，视频=PaddleOCR）。</p>
+          <hr />
+          <h3>🔌 对接后端</h3>
+          <p>在下方设置后端 API 地址（例如本地 <code>http://127.0.0.1:8000</code>，或配合仓库内 <code>api_server.py</code> 启动本地 OCR 服务）。</p>
+          <div class="api-row">
+            <input type="text" id="apiBase" placeholder="http://127.0.0.1:8000" />
+            <button class="btn" id="btnSaveApi">保存</button>
+            <button class="btn ghost" id="btnTestApi">测试连接</button>
+          </div>
+          <p class="hint" id="apiHint"></p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast 提示 -->
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
