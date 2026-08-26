@@ -13,10 +13,15 @@
   // ---------- 常量 / 配置 ----------
   const STORAGE_KEY = "ocr_web_history";
   const API_KEY = "ocr_web_api_base";
+  const ENGINE_KEY = "ocr_web_engine";
+  const DOTS_KEY = "ocr_web_dots_key";
+  const DOTS_ENDPOINT = "https://note3-prev-api.askdiandian.com/v1/messages";
 
   // ---------- 状态管理（前端状态 store） ----------
   const store = {
     apiBase: localStorage.getItem(API_KEY) || "",
+    engine: localStorage.getItem(ENGINE_KEY) || "local",
+    dotsApiKey: localStorage.getItem(DOTS_KEY) || "",
     imageFile: null,
     videoFile: null,
     history: JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"),
@@ -160,28 +165,89 @@
     $("#btnRecognize").disabled = true;
     showToast("⏳ 正在识别…");
     try {
-      let data;
-      if (store.apiBase) {
-        // 真实对接后端
+      let text = "";
+      if (store.engine === "dots") {
+        // Dots AI 引擎：图片 base64 直接调 dots3-note 多模态模型
+        text = await dotsRecognize(store.imageFile);
+        showToast("Dots AI 识别完成", "success");
+      } else if (store.apiBase) {
+        // 本地 OCR 后端
         const form = new FormData();
         form.append("file", store.imageFile);
         form.append("low_vram", $("#lowVram").checked ? "1" : "0");
-        data = await apiRequest("/api/recognize_image", form, true);
-        const text = data.text || data.result || "";
-        renderImageResult(text, store.imageFile);
+        const data = await apiRequest("/api/recognize_image", form, true);
+        text = data.text || data.result || "（后端未返回文本）";
       } else {
         // 演示模式
         await sleep(900);
-        renderImageResult(DEMO_TEXT, store.imageFile);
+        text = DEMO_TEXT;
         showToast("演示模式（未配置后端），已展示示例结果", "success");
       }
-      addHistory(store.imageFile.name, textOf(data));
+      renderImageResult(text, store.imageFile);
+      addHistory(store.imageFile.name, text);
     } catch (e) {
       showToast(e.message, "error");
     } finally {
       $("#btnRecognize").disabled = false;
     }
   });
+
+  // ---------- Dots AI 识别（dots3-note-prev 多模态模型） ----------
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => {
+        const s = String(r.result);
+        resolve(s.slice(s.indexOf(",") + 1)); // 去掉 data:...;base64, 前缀
+      };
+      r.onerror = () => reject(new Error("读取图片失败"));
+      r.readAsDataURL(file);
+    });
+  }
+
+  async function dotsRecognize(file) {
+    const key = store.dotsApiKey;
+    if (!key) throw new Error("请先在「关于」页配置 Dots API Key");
+    const b64 = await fileToBase64(file);
+    const resp = await fetch(DOTS_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "api-key": key,
+      },
+      body: JSON.stringify({
+        model: "dots3-note-prev",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "image",
+                source: { type: "base64", media_type: file.type || "image/jpeg", data: b64 },
+              },
+              {
+                type: "text",
+                text: "请识别并转写这张图片中的全部文字，按原始排版输出为纯文本，不要添加任何额外说明或标记。",
+              },
+            ],
+          },
+        ],
+        max_tokens: 2048,
+        thinking: { type: "disabled" },
+      }),
+    });
+    if (!resp.ok) {
+      let detail = "";
+      try { detail = (await resp.text()).slice(0, 160); } catch (e) { /* ignore */ }
+      throw new Error("Dots API 返回 " + resp.status + (detail ? "：" + detail : ""));
+    }
+    const data = await resp.json();
+    const parts = (data.content || [])
+      .filter((b) => b.type === "text")
+      .map((b) => b.text);
+    return parts.join("\n") || "（模型未返回文本）";
+  }
 
   function renderImageResult(text, file) {
     $("#imageResultText").textContent = text;
@@ -326,6 +392,31 @@
   // 初始化 API 输入框
   $("#apiBase").value = store.apiBase;
   updateConn(false);
+
+  // ---------- 关于页：识别引擎切换（本地 OCR / Dots AI） ----------
+  function applyEngineUI() {
+    const isDots = store.engine === "dots";
+    $$('input[name="engine"]').forEach((el) => {
+      el.checked = el.value === store.engine;
+    });
+    $("#dotsConfig").classList.toggle("hidden", !isDots);
+  }
+  $$('input[name="engine"]').forEach((el) =>
+    el.addEventListener("change", () => {
+      store.engine = el.value;
+      localStorage.setItem(ENGINE_KEY, store.engine);
+      applyEngineUI();
+      showToast(store.engine === "dots" ? "已切换为 Dots AI 引擎" : "已切换为本地 OCR 引擎", "success");
+    })
+  );
+  // Dots API Key（仅存本地 localStorage）
+  $("#dotsApiKey").value = store.dotsApiKey;
+  $("#dotsApiKey").addEventListener("change", (e) => {
+    store.dotsApiKey = e.target.value.trim();
+    localStorage.setItem(DOTS_KEY, store.dotsApiKey);
+    showToast("Dots API Key 已保存（仅本机）", "success");
+  });
+  applyEngineUI();
 
   // ---------- 工具 ----------
   function esc(s) {

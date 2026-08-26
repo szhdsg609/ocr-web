@@ -191,6 +191,19 @@
           <p>本页面为<strong>纯静态前端</strong>，可部署到 GitHub Pages 直接访问。</p>
           <p>默认以<strong>演示模式</strong>运行（内置示例数据）；配置后端 API 地址后，可对接真实 OCR 引擎（图片=Unlimited-OCR，视频=PaddleOCR）。</p>
           <hr />
+          <h3>⚙️ 识别引擎</h3>
+          <p class="hint">选择 OCR 识别后端：本地 OCR 服务，或小红书 Dots AI 多模态模型（dots3-note-prev）。</p>
+          <div class="engine-row">
+            <label><input type="radio" name="engine" value="local" checked /> 本地 OCR 后端</label>
+            <label><input type="radio" name="engine" value="dots" /> Dots AI（dots3-note）</label>
+          </div>
+          <div class="dots-config hidden" id="dotsConfig">
+            <label>Dots API Key
+              <input type="password" id="dotsApiKey" placeholder="在 dots.ai 平台创建的 API Key" />
+            </label>
+            <p class="hint">Key 仅保存在本机浏览器（localStorage），不会写入公开仓库或前端代码。</p>
+          </div>
+          <hr />
           <h3>🔌 对接后端</h3>
           <p>在下方设置后端 API 地址（例如本地 <code>http://127.0.0.1:8000</code>，或配合仓库内 <code>api_server.py</code> 启动本地 OCR 服务）。</p>
           <div class="api-row">
