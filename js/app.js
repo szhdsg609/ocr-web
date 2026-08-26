@@ -192,61 +192,17 @@
     }
   });
 
-  // ---------- Dots AI 识别（dots3-note-prev 多模态模型） ----------
-  function fileToBase64(file) {
-    return new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => {
-        const s = String(r.result);
-        resolve(s.slice(s.indexOf(",") + 1)); // 去掉 data:...;base64, 前缀
-      };
-      r.onerror = () => reject(new Error("读取图片失败"));
-      r.readAsDataURL(file);
-    });
-  }
-
+  // ---------- Dots AI 识别（通过本地后端代理调用，绕过 CORS） ----------
   async function dotsRecognize(file) {
     const key = store.dotsApiKey;
     if (!key) throw new Error("请先在「关于」页配置 Dots API Key");
-    const b64 = await fileToBase64(file);
-    const resp = await fetch(DOTS_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "anthropic-version": "2023-06-01",
-        "api-key": key,
-      },
-      body: JSON.stringify({
-        model: "dots3-note-prev",
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: { type: "base64", media_type: file.type || "image/jpeg", data: b64 },
-              },
-              {
-                type: "text",
-                text: "请识别并转写这张图片中的全部文字，按原始排版输出为纯文本，不要添加任何额外说明或标记。",
-              },
-            ],
-          },
-        ],
-        max_tokens: 2048,
-        thinking: { type: "disabled" },
-      }),
-    });
-    if (!resp.ok) {
-      let detail = "";
-      try { detail = (await resp.text()).slice(0, 160); } catch (e) { /* ignore */ }
-      throw new Error("Dots API 返回 " + resp.status + (detail ? "：" + detail : ""));
-    }
-    const data = await resp.json();
-    const parts = (data.content || [])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text);
-    return parts.join("\n") || "（模型未返回文本）";
+    const base = store.apiBase.replace(/\/+$/, "");
+    if (!base) throw new Error("Dots 需经本地后端代理，请先配置后端地址并运行 api_server.py");
+    const form = new FormData();
+    form.append("file", file);
+    form.append("dots_key", key);
+    const data = await apiRequest("/api/recognize_dots", form, true);
+    return data.text || "（后端未返回文本）";
   }
 
   function renderImageResult(text, file) {

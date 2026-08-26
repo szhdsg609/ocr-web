@@ -113,6 +113,52 @@ def recognize_video(video_path, start, end, interval):
     return rows
 
 
+DOTS_URL = "https://note3-prev-api.askdiandian.com/v1/messages"
+DOTS_MODEL = "dots3-note-prev"
+
+
+def dots_recognize(image_path, api_key):
+    """Dots AI 图片识别（dots3-note-prev 多模态，Anthropic Messages 格式）。
+
+    图片转 base64 直传 Dots API，返回识别出的纯文本。
+    """
+    import base64
+    import json
+    import urllib.request
+    import urllib.error
+
+    if not api_key:
+        raise ValueError("缺少 Dots API Key")
+    with open(image_path, "rb") as fh:
+        b64 = base64.b64encode(fh.read()).decode("ascii")
+    body = {
+        "model": DOTS_MODEL,
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "image",
+                 "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
+                {"type": "text",
+                 "text": "请识别并转写这张图片中的全部文字，按原始排版输出为纯文本，不要添加任何额外说明或标记。"},
+            ],
+        }],
+        "max_tokens": 2048,
+        "thinking": {"type": "disabled"},
+    }
+    req = urllib.request.Request(
+        DOTS_URL, data=json.dumps(body).encode("utf-8"),
+        headers={"Content-Type": "application/json",
+                 "anthropic-version": "2023-06-01",
+                 "api-key": api_key})
+    try:
+        with urllib.request.urlopen(req, timeout=180) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        raise ValueError("Dots API 返回 %s：%s" % (e.code, e.read().decode("utf-8")[:200]))
+    texts = [b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"]
+    return "\n".join(texts) or "（模型未返回文本）"
+
+
 class Handler(BaseHTTPRequestHandler):
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -181,6 +227,23 @@ class Handler(BaseHTTPRequestHandler):
                     iv = float(form.getvalue("interval", "5") or 5)
                     rows = recognize_video(tmp, start, end, iv)
                     return self._json(200, {"rows": rows})
+                finally:
+                    try:
+                        os.remove(tmp)
+                    except OSError:
+                        pass
+
+            elif path == "/api/recognize_dots":
+                # Dots AI 代理：接收图片 + dots_key，服务端调用 Dots API（绕过浏览器 CORS）
+                f = form["file"]
+                dots_key = form.getvalue("dots_key", "").strip()
+                tmp = os.path.join(TMP, "dots_" + str(int(time.time() * 1000)) +
+                                   os.path.splitext(f.filename or ".jpg")[1])
+                with open(tmp, "wb") as w:
+                    w.write(f.file.read())
+                try:
+                    text = dots_recognize(tmp, dots_key)
+                    return self._json(200, {"text": text})
                 finally:
                     try:
                         os.remove(tmp)
