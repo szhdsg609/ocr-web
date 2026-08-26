@@ -192,16 +192,16 @@
           <p>默认以<strong>演示模式</strong>运行（内置示例数据）；配置后端 API 地址后，可对接真实 OCR 引擎（图片=Unlimited-OCR，视频=PaddleOCR）。</p>
           <hr />
           <h3>⚙️ 识别引擎</h3>
-          <p class="hint">选择 OCR 识别后端：本地 OCR 服务，或小红书 Dots AI 多模态模型（dots3-note-prev）。</p>
+          <p class="hint">选择 OCR 识别后端：本地 OCR 服务（需对接后端），或小红书 Dots AI 多模态模型（dots3-note-prev，前端直连、免后端）。</p>
           <div class="engine-row">
             <label><input type="radio" name="engine" value="local" checked /> 本地 OCR 后端</label>
             <label><input type="radio" name="engine" value="dots" /> Dots AI（dots3-note）</label>
           </div>
           <div class="dots-config hidden" id="dotsConfig">
-            <label>Dots API Key
-              <input type="password" id="dotsApiKey" placeholder="在 dots.ai 平台创建的 API Key" />
+            <label>Dots API Key（可留空，使用内置默认 Key）
+              <input type="password" id="dotsApiKey" placeholder="可留空，默认使用内置 Key" />
             </label>
-            <p class="hint">Key 仅保存在本机浏览器（localStorage），不会写入公开仓库或前端代码。</p>
+            <p class="hint">默认已内置 Dots API Key，无需配置即可识别；填写自己的 Key 会覆盖内置值（仅存本机浏览器）。</p>
           </div>
           <hr />
           <h3>🔌 对接后端</h3>

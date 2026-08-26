@@ -15,7 +15,10 @@
   const API_KEY = "ocr_web_api_base";
   const ENGINE_KEY = "ocr_web_engine";
   const DOTS_KEY = "ocr_web_dots_key";
+  // Dots AI（小红书 dots3-note-prev 多模态）：地址与默认 Key 内置，前端直连、免本地后端
   const DOTS_ENDPOINT = "https://note3-prev-api.askdiandian.com/v1/messages";
+  const DOTS_MODEL = "dots3-note-prev";
+  const DOTS_DEFAULT_KEY = "ak_tB2hcaRu9cS8jr1dWcQwaYy1ZawY1";
 
   // ---------- 状态管理（前端状态 store） ----------
   const store = {
@@ -192,17 +195,59 @@
     }
   });
 
-  // ---------- Dots AI 识别（通过本地后端代理调用，绕过 CORS） ----------
+  // ---------- Dots AI 识别（前端直连 dots3-note-prev，无需本地后端） ----------
+  // 说明：Dots API 响应带 CORS 头（Access-Control-Allow-Origin 回显请求来源），
+  // 因此浏览器可直接调用；默认 Key 已内置，也可在「关于」页填写自己的 Key 覆盖。
+  const DOTS_PROMPT =
+    "请识别并转写这张图片中的全部文字，按原始排版输出为纯文本，不要添加任何额外说明或标记。";
   async function dotsRecognize(file) {
-    const key = store.dotsApiKey;
-    if (!key) throw new Error("请先在「关于」页配置 Dots API Key");
-    const base = store.apiBase.replace(/\/+$/, "");
-    if (!base) throw new Error("Dots 需经本地后端代理，请先配置后端地址并运行 api_server.py");
-    const form = new FormData();
-    form.append("file", file);
-    form.append("dots_key", key);
-    const data = await apiRequest("/api/recognize_dots", form, true);
-    return data.text || "（后端未返回文本）";
+    const key = (store.dotsApiKey || DOTS_DEFAULT_KEY).trim();
+    if (!key) throw new Error("缺少 Dots API Key（请填在「关于」页或联系管理员）");
+    const b64 = await fileToBase64(file);
+    const mediaType = file.type || "image/jpeg";
+    const body = {
+      model: DOTS_MODEL,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } },
+          { type: "text", text: DOTS_PROMPT },
+        ],
+      }],
+      max_tokens: 2048,
+      thinking: { type: "disabled" },
+    };
+    const res = await fetch(DOTS_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01",
+        "api-key": key,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error("Dots API 错误 " + res.status + "：" + errText.slice(0, 120));
+    }
+    const data = await res.json();
+    const texts = (data.content || [])
+      .filter((b) => b.type === "text")
+      .map((b) => b.text || "");
+    return texts.join("\n") || "（模型未返回文本）";
+  }
+
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => {
+        const str = String(r.result || "");
+        const idx = str.indexOf(",");
+        resolve(idx >= 0 ? str.slice(idx + 1) : str);
+      };
+      r.onerror = () => reject(new Error("读取图片失败"));
+      r.readAsDataURL(file);
+    });
   }
 
   function renderImageResult(text, file) {
