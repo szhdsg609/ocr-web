@@ -100,7 +100,7 @@
       <div class="card">
         <div class="card-head">
           <h2>🎬 视频抽帧识别</h2>
-          <p class="desc">按时间间隔抽帧，调用后端 OCR 引擎（PaddleOCR）识别</p>
+          <p class="desc">按时间间隔抽帧识别：Dots AI 引擎 = 浏览器抽帧直连（免后端，建议间隔≥5 秒）；本地 OCR 后端 = PaddleOCR 中央数字</p>
         </div>
 
         <div class="form-grid">
@@ -134,7 +134,7 @@
         <div class="card-head"><h2>📋 识别结果</h2></div>
         <div class="table-wrap">
           <table id="videoResultTable">
-            <thead><tr><th>时间</th><th>上部数字</th><th>下部数字</th><th>置信度</th></tr></thead>
+            <thead id="videoResultHead"><tr><th>时间</th><th>上部数字</th><th>下部数字</th><th>置信度</th></tr></thead>
             <tbody></tbody>
           </table>
         </div>

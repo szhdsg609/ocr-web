@@ -200,17 +200,16 @@
   // 因此浏览器可直接调用；默认 Key 已内置，也可在「关于」页填写自己的 Key 覆盖。
   const DOTS_PROMPT =
     "请识别并转写这张图片中的全部文字，按原始排版输出为纯文本，不要添加任何额外说明或标记。";
-  async function dotsRecognize(file) {
+  // 识别一张 base64 图片（图片识别与视频抽帧共用）
+  async function dotsRequestBase64(b64, mediaType) {
     const key = (store.dotsApiKey || DOTS_DEFAULT_KEY).trim();
     if (!key) throw new Error("缺少 Dots API Key（请填在「关于」页或联系管理员）");
-    const b64 = await fileToBase64(file);
-    const mediaType = file.type || "image/jpeg";
     const body = {
       model: DOTS_MODEL,
       messages: [{
         role: "user",
         content: [
-          { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } },
+          { type: "image", source: { type: "base64", media_type: mediaType || "image/jpeg", data: b64 } },
           { type: "text", text: DOTS_PROMPT },
         ],
       }],
@@ -228,13 +227,18 @@
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => "");
-      throw new Error("Dots API 错误 " + res.status + "：" + errText.slice(0, 120));
+      const hint = res.status === 429 ? "（Dots 接口限速 60 次/分钟，请增大抽帧间隔或稍后再试）" : "";
+      throw new Error("Dots API 错误 " + res.status + "：" + hint + errText.slice(0, 120));
     }
     const data = await res.json();
     const texts = (data.content || [])
       .filter((b) => b.type === "text")
       .map((b) => b.text || "");
     return texts.join("\n") || "（模型未返回文本）";
+  }
+  async function dotsRecognize(file) {
+    const b64 = await fileToBase64(file);
+    return dotsRequestBase64(b64, file.type || "image/jpeg");
   }
 
   function fileToBase64(file) {
@@ -248,6 +252,82 @@
       r.onerror = () => reject(new Error("读取图片失败"));
       r.readAsDataURL(file);
     });
+  }
+
+  // ---------- 视频抽帧 + Dots 逐帧识别（浏览器端完成，无需本地后端） ----------
+  function fmtTime(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = sec % 60;
+    return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0");
+  }
+  function parseTime(str) {
+    const parts = String(str).split(":").map(Number);
+    if (parts.length === 3) return (parts[0] || 0) * 3600 + (parts[1] || 0) * 60 + (parts[2] || 0);
+    if (parts.length === 2) return (parts[0] || 0) * 60 + (parts[1] || 0);
+    return Number(str) || 0;
+  }
+  function extractVideoFrame(file, time) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const v = document.createElement("video");
+      v.muted = true;
+      v.preload = "auto";
+      v.src = url;
+      let done = false;
+      const cleanup = () => {
+        URL.revokeObjectURL(url);
+        v.removeAttribute("src");
+        v.load();
+      };
+      v.addEventListener("loadedmetadata", () => {
+        if (time > v.duration) {
+          cleanup();
+          reject(new Error("起始/结束时间超出视频时长"));
+          return;
+        }
+        try {
+          v.currentTime = Math.max(0, Math.min(time, v.duration - 0.05));
+        } catch (e) {
+          cleanup();
+          reject(e);
+        }
+      });
+      v.addEventListener("seeked", () => {
+        if (done) return;
+        done = true;
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = v.videoWidth;
+          canvas.height = v.videoHeight;
+          canvas.getContext("2d").drawImage(v, 0, 0);
+          const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+          cleanup();
+          resolve(dataUrl);
+        } catch (e) {
+          cleanup();
+          reject(e);
+        }
+      });
+      v.addEventListener("error", () => {
+        cleanup();
+        reject(new Error("浏览器无法解码该视频，请尝试 MP4(H.264) 格式"));
+      });
+      v.load();
+    });
+  }
+  async function dotsVideoRecognize(file, start, end, interval) {
+    const rows = [];
+    let t = start;
+    while (t <= end + 1e-9) {
+      const dataUrl = await extractVideoFrame(file, t);
+      const b64 = dataUrl.split(",")[1];
+      const text = await dotsRequestBase64(b64, "image/jpeg");
+      rows.push({ ts: fmtTime(t), text });
+      t += interval;
+    }
+    return rows;
   }
 
   function renderImageResult(text, file) {
@@ -340,10 +420,24 @@
   $("#btnVideoRecognize").addEventListener("click", async () => {
     if (!store.videoFile) return;
     $("#btnVideoRecognize").disabled = true;
-    showToast("⏳ 正在抽帧识别…");
     try {
       let rows;
-      if (store.apiBase) {
+      if (store.engine === "dots") {
+        // Dots AI 引擎：浏览器抽帧 → 前端直连逐帧识别（免本地后端）
+        const start = parseTime($("#vidStart").value);
+        const end = parseTime($("#vidEnd").value);
+        const interval = Math.max(1, parseInt($("#vidInterval").value, 10) || 5);
+        const n = Math.floor((end - start) / interval) + 1;
+        if (n > 60) {
+          showToast("⚠️ 帧数过多（" + n + " 帧），Dots 限速 60 次/分钟，建议增大抽帧间隔", "error");
+          return;
+        }
+        showToast("⏳ Dots 逐帧识别中（约 " + n + " 帧 × 8s ≈ " + Math.ceil((n * 8) / 60) + " 分钟）…");
+        rows = await dotsVideoRecognize(store.videoFile, start, end, interval);
+        showToast("Dots AI 视频识别完成", "success");
+      } else if (store.apiBase) {
+        // 本地 OCR 后端（PaddleOCR 中央数字）
+        showToast("⏳ 正在抽帧识别…");
         const form = new FormData();
         form.append("file", store.videoFile);
         form.append("start", $("#vidStart").value);
@@ -352,13 +446,14 @@
         const data = await apiRequest("/api/recognize_video", form, true);
         rows = data.rows || [];
       } else {
+        // 演示模式
+        showToast("演示模式（未配置后端），已展示示例数据", "success");
         await sleep(1200);
         rows = [
           { ts: "0:00:00", upper: "89", lower: "90", conf: "0.99" },
           { ts: "0:00:05", upper: "90", lower: "90", conf: "1.00" },
           { ts: "0:00:10", upper: "89", lower: "90", conf: "0.99" },
         ];
-        showToast("演示模式（未配置后端），已展示示例数据", "success");
       }
       renderVideoTable(rows);
     } catch (e) {
@@ -370,14 +465,20 @@
 
   function renderVideoTable(rows) {
     const tb = $("#videoResultTable tbody");
+    const isDots = rows.some((r) => r && r.text !== undefined);
+    $("#videoResultHead").innerHTML = isDots
+      ? "<tr><th>时间</th><th>识别文本</th></tr>"
+      : "<tr><th>时间</th><th>上部数字</th><th>下部数字</th><th>置信度</th></tr>";
     tb.innerHTML = rows.length
-      ? rows
-          .map(
-            (r) =>
-              `<tr><td>${esc(r.ts)}</td><td>${esc(r.upper)}</td><td>${esc(r.lower)}</td><td>${esc(r.conf)}</td></tr>`
-          )
-          .join("")
-      : '<tr><td colspan="4">无结果</td></tr>';
+      ? (isDots
+          ? rows.map((r) => `<tr><td>${esc(r.ts)}</td><td class="cell-text">${esc(r.text)}</td></tr>`)
+          : rows
+              .map((r) =>
+                `<tr><td>${esc(r.ts)}</td><td>${esc(r.upper)}</td><td>${esc(r.lower)}</td><td>${esc(r.conf)}</td></tr>`
+              )
+              .join("")
+        ).join("")
+      : `<tr><td colspan="${isDots ? 2 : 4}">无结果</td></tr>`;
     $("#videoResult").classList.remove("hidden");
   }
 

@@ -162,6 +162,7 @@ table { width: 100%; border-collapse: collapse; font-size: 14px; }
 th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); }
 th { background: #f8fafc; font-weight: 600; position: sticky; top: 0; }
 tr:hover td { background: #f8fafc; }
+#videoResultTable td.cell-text { text-align: left; white-space: pre-wrap; word-break: break-all; max-width: 560px; line-height: 1.5; }
 
 /* ---------- 架构页 ---------- */
 .arch-img { width: 100%; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px; }
