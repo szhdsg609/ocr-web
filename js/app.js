@@ -23,7 +23,7 @@
   // ---------- 状态管理（前端状态 store） ----------
   const store = {
     apiBase: localStorage.getItem(API_KEY) || "",
-    engine: localStorage.getItem(ENGINE_KEY) || "local",
+    engine: localStorage.getItem(ENGINE_KEY) || "dots",
     dotsApiKey: localStorage.getItem(DOTS_KEY) || "",
     imageFile: null,
     videoFile: null,
@@ -107,8 +107,11 @@
   // 连接状态指示
   function updateConn(online) {
     const el = $("#connStatus");
-    el.classList.toggle("online", !!online);
-    $("#connText").textContent = online
+    const isDots = store.engine === "dots";
+    el.classList.toggle("online", !!online || isDots);
+    $("#connText").textContent = isDots
+      ? "已连接 Dots AI（免后端）"
+      : online
       ? "后端已连接"
       : store.apiBase
       ? "后端：已配置（未连接）"
