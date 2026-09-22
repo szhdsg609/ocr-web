@@ -22,13 +22,21 @@
 
   // ---------- 状态管理（前端状态 store） ----------
   const store = {
-    apiBase: localStorage.getItem(API_KEY) || "",
+    apiBase: localStorage.getItem(API_KEY) || (location.protocol.startsWith("http") ? location.origin : ""),
     engine: localStorage.getItem(ENGINE_KEY) || "dots",
     dotsApiKey: localStorage.getItem(DOTS_KEY) || "",
     imageFile: null,
     videoFile: null,
     history: JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"),
+    dataRows: [],
   };
+
+  // 后端 API 基地址（默认与当前访问地址同源，经网关转发；也可在「关于」页手动指定）
+  function apiBase() {
+    const configured = (store.apiBase || "").replace(/\/+$/, "");
+    if (configured) return configured;
+    return location.protocol.startsWith("http") ? location.origin : "";
+  }
 
   // ---------- DOM 工具 ----------
   const $ = (sel) => document.querySelector(sel);
@@ -51,6 +59,7 @@
       v.classList.toggle("active", v.id === "view-" + route)
     );
     history.replaceState(null, "", "#" + route);
+    if (route === "data") loadReviewData();
   }
   $$(".nav-tab").forEach((b) =>
     b.addEventListener("click", () => navigate(b.dataset.route))
@@ -176,13 +185,19 @@
         // Dots AI 引擎：图片 base64 直接调 dots3-note 多模态模型
         text = await dotsRecognize(store.imageFile);
         showToast("Dots AI 识别完成", "success");
-      } else if (store.apiBase) {
-        // 本地 OCR 后端
+      } else if (apiBase()) {
+        // 本项目后端（Flask → OCR 微服务）：识别结果自动写入数据库审核队列
         const form = new FormData();
         form.append("file", store.imageFile);
-        form.append("low_vram", $("#lowVram").checked ? "1" : "0");
-        const data = await apiRequest("/api/recognize_image", form, true);
-        text = data.text || data.result || "（后端未返回文本）";
+        form.append("engine", "paddle_mobile");
+        form.append("mode", "standard");
+        form.append("options", "{}");
+        const res = await fetch(apiBase() + "/api/ocr", { method: "POST", body: form });
+        let body = {};
+        try { body = await res.json(); } catch { throw new Error("后端返回非 JSON（HTTP " + res.status + "）"); }
+        if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+        text = (body.data && body.data.result && body.data.result.text) || "（后端未返回文本）";
+        showToast("识别完成，已进入审核队列（记录 #" + (body.data && body.data.record_id) + "）", "success");
       } else {
         // 演示模式
         await sleep(900);
@@ -484,6 +499,71 @@
       : `<tr><td colspan="${isDots ? 2 : 4}">无结果</td></tr>`;
     $("#videoResult").classList.remove("hidden");
   }
+
+  // ---------- 数据审核（接入后端 MySQL 审核队列 / 可信知识库） ----------
+  async function loadReviewData() {
+    const hint = $("#dataHint");
+    hint.textContent = "正在读取后端数据…";
+    try {
+      const statsRes = await fetch(apiBase() + "/api/review/stats");
+      let statsBody = {};
+      try { statsBody = await statsRes.json(); } catch { throw new Error("后端返回非 JSON（HTTP " + statsRes.status + "）"); }
+      if (!statsRes.ok || statsBody.code !== 0) throw new Error(statsBody.message || ("HTTP " + statsRes.status));
+      const s = statsBody.data || {};
+      $("#statPending").textContent = s.pending ?? 0;
+      $("#statApproved").textContent = s.approved ?? 0;
+      $("#statRejected").textContent = s.rejected ?? 0;
+      $("#statKnowledge").textContent = s.knowledge ?? 0;
+      $("#statTotal").textContent = s.total ?? 0;
+
+      const histRes = await fetch(apiBase() + "/api/review/history?status=approved&limit=50");
+      let histBody = {};
+      try { histBody = await histRes.json(); } catch { throw new Error("后端返回非 JSON（HTTP " + histRes.status + "）"); }
+      if (!histRes.ok || histBody.code !== 0) throw new Error(histBody.message || ("HTTP " + histRes.status));
+      const items = (histBody.data && histBody.data.items) || [];
+      store.dataRows = items;
+      renderReviewRows(items);
+      hint.textContent = "已读取 " + items.length + " 条已通过记录（共 " + ((histBody.data && histBody.data.total) ?? items.length) + " 条）。";
+    } catch (e) {
+      hint.textContent = "读取失败：" + e.message + "（请确认后端服务已启动，「关于」页的 API 地址是否正确）";
+    }
+  }
+
+  function renderReviewRows(items) {
+    const tb = $("#dataTableBody");
+    $("#dataTableWrap").style.display = items.length ? "" : "none";
+    tb.innerHTML = items
+      .map(
+        (r) => `<tr>
+          <td>${esc(r.reviewed_at || r.created_at || "")}</td>
+          <td>${esc(r.file_name || "")}</td>
+          <td>${esc(r.engine || "")}</td>
+          <td>${esc(r.reviewer || "")}</td>
+          <td class="cell-text">${esc((r.corrected_text || r.raw_text || "").slice(0, 300))}</td>
+        </tr>`
+      )
+      .join("");
+  }
+
+  $("#btnDataRefresh").addEventListener("click", loadReviewData);
+  $("#btnDataExport").addEventListener("click", () => {
+    const rows = store.dataRows || [];
+    if (!rows.length) { showToast("暂无可导出数据", "error"); return; }
+    const head = ["审核时间", "文件名", "引擎", "审核人", "校正文本"];
+    const body = rows.map((r) => [
+      r.reviewed_at || r.created_at || "",
+      r.file_name || "",
+      r.engine || "",
+      r.reviewer || "",
+      (r.corrected_text || r.raw_text || "").replace(/[\r\n]+/g, " "),
+    ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","));
+    const blob = new Blob(["\ufeff" + [head.join(",")].concat(body).join("\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "ocr_review_approved.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
 
   // ---------- 关于页：API 配置 ----------
   $("#btnSaveApi").addEventListener("click", () => {

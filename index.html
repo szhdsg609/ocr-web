@@ -21,6 +21,7 @@
     <nav class="nav-tabs" id="navTabs">
       <button class="nav-tab active" data-route="image">🖼️ 图片识别</button>
       <button class="nav-tab" data-route="video">🎬 视频识别</button>
+      <button class="nav-tab" data-route="data">🗄️ 数据审核</button>
       <button class="nav-tab" data-route="architecture">🏗️ 系统架构</button>
       <button class="nav-tab" data-route="about">📘 关于</button>
     </nav>
@@ -141,6 +142,36 @@
       </div>
     </section>
 
+    <!-- 数据审核视图（接入后端 MySQL：审核队列 + 可信知识库） -->
+    <section id="view-data" class="view">
+      <div class="card">
+        <div class="card-head">
+          <h2>🗄️ 数据审核</h2>
+          <p class="desc">来自后端数据库（MySQL · ocr_competition）的审核队列与可信知识库</p>
+        </div>
+        <div class="data-stats">
+          <div class="stat-card"><span class="stat-num" id="statPending">–</span><span class="stat-label">待审核</span></div>
+          <div class="stat-card"><span class="stat-num" id="statApproved">–</span><span class="stat-label">已通过</span></div>
+          <div class="stat-card"><span class="stat-num" id="statRejected">–</span><span class="stat-label">已拒绝</span></div>
+          <div class="stat-card"><span class="stat-num" id="statKnowledge">–</span><span class="stat-label">知识样本</span></div>
+          <div class="stat-card"><span class="stat-num" id="statTotal">–</span><span class="stat-label">总计</span></div>
+        </div>
+        <div class="action-row">
+          <button class="btn primary" id="btnDataRefresh">🔄 刷新数据</button>
+          <button class="btn ghost" id="btnDataExport">⬇️ 导出 CSV</button>
+        </div>
+        <p class="hint" id="dataHint">点击「刷新数据」从后端读取审核统计与已通过记录。</p>
+        <div class="table-wrap" id="dataTableWrap" style="display:none">
+          <table id="dataTable">
+            <thead>
+              <tr><th>审核时间</th><th>文件名</th><th>引擎</th><th>审核人</th><th>校正文本</th></tr>
+            </thead>
+            <tbody id="dataTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <!-- 系统架构视图 -->
     <section id="view-architecture" class="view">
       <div class="card">
@@ -205,9 +236,9 @@
           </div>
           <hr />
           <h3>🔌 对接后端</h3>
-          <p>在下方设置后端 API 地址（例如本地 <code>http://127.0.0.1:8000</code>，或配合仓库内 <code>api_server.py</code> 启动本地 OCR 服务）。</p>
+          <p>在下方设置后端 API 地址：本地网关同源时<strong>留空即可</strong>；公网（GitHub Pages）访问请填写后端公网地址（如 <code>http://云服务器IP</code>），用于读取审核队列与可信知识库数据。</p>
           <div class="api-row">
-            <input type="text" id="apiBase" placeholder="http://127.0.0.1:8000" />
+            <input type="text" id="apiBase" placeholder="留空使用当前站点 / 或填 http://云服务器IP" />
             <button class="btn" id="btnSaveApi">保存</button>
             <button class="btn ghost" id="btnTestApi">测试连接</button>
           </div>

@@ -164,6 +164,13 @@ th { background: #f8fafc; font-weight: 600; position: sticky; top: 0; }
 tr:hover td { background: #f8fafc; }
 #videoResultTable td.cell-text { text-align: left; white-space: pre-wrap; word-break: break-all; max-width: 560px; line-height: 1.5; }
 
+/* ---------- 数据审核 ---------- */
+.data-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 12px; margin: 12px 0 14px; }
+.stat-card { border: 1px solid var(--border); border-radius: 10px; padding: 14px 10px; text-align: center; background: #f8fafc; }
+.stat-card .stat-num { display: block; font-size: 26px; font-weight: 700; color: var(--primary); line-height: 1.2; }
+.stat-card .stat-label { font-size: 12px; color: var(--text-muted); }
+#dataTable td.cell-text { white-space: pre-wrap; word-break: break-all; max-width: 420px; line-height: 1.5; }
+
 /* ---------- 架构页 ---------- */
 .arch-img { width: 100%; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px; }
 .arch-layers { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
