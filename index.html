@@ -6,11 +6,12 @@
   <title>OCR 识别系统 · 前端</title>
   <meta name="description" content="OCR 识别系统前端 —— 一体化智慧储运分拣系统前端层（UI 组件 / 状态管理 / 路由 / API 调用）" />
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔍</text></svg>" />
-  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/theme-dark.css" />
 </head>
 <body>
-  <!-- ========== 顶部导航栏（路由） ========== -->
-  <header class="topbar">
+  <div class="app">
+  <!-- ========== 侧边栏导航（路由） ========== -->
+  <aside class="sidebar">
     <div class="brand">
       <span class="logo">🔍</span>
       <div class="brand-text">
@@ -26,11 +27,13 @@
       <button class="nav-tab" data-route="architecture">🏗️ 系统架构</button>
       <button class="nav-tab" data-route="about">📘 关于</button>
     </nav>
-    <div class="conn-status" id="connStatus">
-      <span class="dot"></span>
-      <span id="connText">未连接后端</span>
+    <div class="sidebar-foot">
+      <div class="conn-status" id="connStatus">
+        <span class="dot"></span>
+        <span id="connText">未连接后端</span>
+      </div>
     </div>
-  </header>
+  </aside>
 
   <!-- ========== 页面容器（前端路由，SPA 多视图） ========== -->
   <main class="container">
@@ -354,6 +357,7 @@
       </div>
     </section>
   </main>
+  </div>
 
   <!-- Toast 提示 -->
   <div id="toast" class="toast hidden"></div>
