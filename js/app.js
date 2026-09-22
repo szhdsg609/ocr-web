@@ -558,7 +558,9 @@
       renderReviewRows(items);
       hint.textContent = "已读取 " + items.length + " 条已通过记录（共 " + ((histBody.data && histBody.data.total) ?? items.length) + " 条）。";
     } catch (e) {
-      hint.textContent = "读取失败：" + e.message;
+      hint.textContent = !apiBase()
+        ? "当前是纯静态托管页面（无后端）。请改用本机地址 http://127.0.0.1:8082/ 查看审核数据与可信知识库。"
+        : "读取失败：" + e.message;
     }
   }
 
@@ -625,7 +627,13 @@
         li.addEventListener("click", () => selectReviewRecord(+li.dataset.id))
       );
     } catch (e) {
-      ul.innerHTML = `<li class="hint">读取失败：${esc(e.message)}</li>`;
+      const needBackend = !apiBase();
+      ul.innerHTML = needBackend
+        ? `<li class="hint">当前是纯静态托管页面（无后端），无法填写标准答案。<br>
+             请改用<b>本机地址</b>打开：
+             <a href="http://127.0.0.1:8082/" target="_blank" rel="noopener">http://127.0.0.1:8082/</a>
+             （数据库与后端运行在你自己电脑上）</li>`
+        : `<li class="hint">读取失败：${esc(e.message)}</li>`;
     }
   }
 
@@ -693,7 +701,9 @@
         : "还没有已审核并填写标准结果的记录——请先在「数据审核」→「审核台」填写标准结果。";
     } catch (e) {
       sel.innerHTML = '<option value="">读取失败</option>';
-      $("#evalHint").textContent = "读取失败：" + e.message;
+      $("#evalHint").textContent = !apiBase()
+        ? "当前是纯静态托管页面（无后端）。请改用本机地址 http://127.0.0.1:8082/ 使用评测对比（数据库在本机）。"
+        : "读取失败：" + e.message;
     }
   }
 
