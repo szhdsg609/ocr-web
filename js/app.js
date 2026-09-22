@@ -659,11 +659,25 @@
     if (label) label.textContent = reviewFilter === "all" ? "全部记录" : REVIEW_STATUS_LABEL[reviewFilter];
   }
 
+  // 审核台顶部显示令牌配置状态，避免同学不知道为何提交失败
+  function updateReviewTokenState() {
+    const el = $("#reviewTokenState");
+    if (!el) return;
+    if ((store.reviewToken || "").trim()) {
+      el.textContent = "✅ 审核令牌已配置（仅存本机浏览器），可直接提交。";
+      el.style.color = "";
+    } else {
+      el.textContent = "⚠️ 尚未配置审核令牌 —— 请到「📘 关于」页的「🔐 审核令牌」填写并保存，否则无法提交。";
+      el.style.color = "#fca5a5";
+    }
+  }
+
   async function loadPendingList(status) {
     const ul = $("#pendingList");
     if (!ul) return;
     if (status) reviewFilter = status;
     syncReviewFilterUI();
+    updateReviewTokenState();
     try {
       const body = await apiFetch(
         "/api/review/pending?status=" + encodeURIComponent(reviewFilter) + "&page=1&page_size=50"
@@ -752,7 +766,10 @@
         $("#reviewEmpty").classList.remove("hidden");
       }
     } catch (e) {
-      showToast("提交失败：" + e.message, "error");
+      const msg = /令牌|UNAUTHORIZED/i.test(e.message)
+        ? "审核令牌无效或未配置 —— 请到「关于」页重新填写并保存后再提交"
+        : e.message;
+      showToast("提交失败：" + msg, "error");
     }
   }
 
@@ -884,6 +901,7 @@
     store.reviewToken = $("#reviewTokenInput").value.trim();
     localStorage.setItem(REVIEW_TOKEN_KEY, store.reviewToken);
     $("#reviewTokenHint").textContent = store.reviewToken ? "已保存审核令牌（仅本机）" : "已清除审核令牌。";
+    updateReviewTokenState();
     showToast("审核令牌已保存", "success");
   });
 
