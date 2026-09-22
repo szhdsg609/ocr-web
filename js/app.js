@@ -50,7 +50,10 @@
   // 统一后端请求：自动处理「未配置」「返回网页而非 JSON」等情况，给出可读提示
   async function apiFetch(path, options) {
     const base = apiBase();
-    if (!base) throw new Error(NO_BACKEND_HINT);
+    // 静态托管（GitHub Pages）上没有后端服务：同源地址也直接给出配置提示
+    if (!base || (/\.github\.io$/i.test(location.hostname) && base === location.origin)) {
+      throw new Error(NO_BACKEND_HINT);
+    }
     let res;
     try {
       res = await fetch(base + path, options);
