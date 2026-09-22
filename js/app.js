@@ -221,6 +221,7 @@
     if (!store.imageFile) return;
     $("#btnRecognize").disabled = true;
     showToast("⏳ 正在识别…");
+    const startedAt = Date.now();
     try {
       let text = "";
       if (store.engine === "dots") {
@@ -250,8 +251,9 @@
         text = DEMO_TEXT;
         showToast("演示模式（未配置后端），已展示示例结果", "success");
       }
-      renderImageResult(text, store.imageFile);
-      addHistory(store.imageFile.name, text);
+      const costSeconds = (Date.now() - startedAt) / 1000;
+      renderImageResult(text, store.imageFile, costSeconds);
+      addHistory(store.imageFile.name, text, costSeconds);
     } catch (e) {
       showToast(e.message, "error");
     } finally {
@@ -412,11 +414,11 @@
     return rows;
   }
 
-  function renderImageResult(text, file) {
+  function renderImageResult(text, file, seconds) {
     $("#imageResultText").textContent = text;
     $("#resultImage").src = $("#imagePreview").src || "";
-    const secs = (Math.random() * 20 + 10).toFixed(1);
-    $("#imageCost").textContent = "耗时约 " + secs + "s";
+    const cost = typeof seconds === "number" ? seconds.toFixed(1) : "—";
+    $("#imageCost").textContent = "耗时约 " + cost + "s";
     $("#imageResult").classList.remove("hidden");
     return text;
   }
@@ -442,11 +444,14 @@
   });
 
   // ---------- 历史记录（状态管理 localStorage） ----------
-  function addHistory(name, preview) {
+  //  保存完整识别文本（text），不再只存截断预览；同时记录真实耗时
+  function addHistory(name, text, seconds) {
     store.history.unshift({
       name,
       time: new Date().toLocaleString("zh-CN"),
-      preview: (preview || "").slice(0, 60),
+      text: text || "",
+      cost: typeof seconds === "number" ? Number(seconds.toFixed(1)) : null,
+      preview: (text || "").slice(0, 60), // 兼容旧版字段
     });
     if (store.history.length > 20) store.history.pop();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store.history));
@@ -468,8 +473,20 @@
     ul.querySelectorAll(".h-act").forEach((el) =>
       el.addEventListener("click", () => {
         const h = store.history[+el.dataset.i];
-        $("#imageResultText").textContent = h.preview || "（无预览）";
+        if (!h) return;
+        if (h.text) {
+          $("#imageResultText").textContent = h.text;
+          $("#imageCost").textContent =
+            typeof h.cost === "number" ? "历史记录 · 耗时约 " + h.cost + "s" : "历史记录";
+        } else {
+          // 旧版本只保存了 60 字预览，无法恢复全文
+          $("#imageResultText").textContent =
+            (h.preview || "（无预览）") +
+            "\n\n（此条历史来自旧版本，仅保存了预览；请重新识别以保存完整结果）";
+          $("#imageCost").textContent = "旧版历史记录";
+        }
         $("#imageResult").classList.remove("hidden");
+        showToast("已载入历史记录：" + h.name, "success");
       })
     );
   }
