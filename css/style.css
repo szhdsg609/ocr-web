@@ -171,6 +171,48 @@ tr:hover td { background: #f8fafc; }
 .stat-card .stat-label { font-size: 12px; color: var(--text-muted); }
 #dataTable td.cell-text { white-space: pre-wrap; word-break: break-all; max-width: 420px; line-height: 1.5; }
 
+/* ---------- 审核台（填写标准结果） ---------- */
+.review-grid { display: grid; grid-template-columns: 240px 1fr; gap: 16px; }
+.review-list { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.review-list-head { padding: 10px 12px; background: #f8fafc; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 13px; }
+.review-list ul { list-style: none; margin: 0; padding: 0; max-height: 440px; overflow: auto; }
+.review-list li { padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px; display: flex; flex-direction: column; gap: 3px; }
+.review-list li:hover { background: #f1f5f9; }
+.review-list li.active { background: #e0f2fe; box-shadow: inset 3px 0 0 var(--primary); }
+.review-list .r-meta { color: var(--text-muted); font-size: 11px; }
+.badge { display: inline-block; min-width: 20px; padding: 0 6px; border-radius: 10px; background: var(--primary); color: #fff; font-size: 11px; text-align: center; }
+.review-panel { min-width: 0; }
+.review-meta { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+.review-cols { display: grid; grid-template-columns: minmax(200px, 1fr) minmax(260px, 1.2fr); gap: 12px; }
+.review-col-title { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.review-col img { width: 100%; max-height: 380px; object-fit: contain; border: 1px solid var(--border); border-radius: 8px; background: #f8fafc; }
+.review-col textarea { width: 100%; font-family: Consolas, "Microsoft YaHei", monospace; font-size: 12.5px; line-height: 1.6; padding: 10px; border: 1px solid var(--border); border-radius: 8px; resize: vertical; box-sizing: border-box; }
+.review-form { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+.review-form label { font-size: 12px; color: var(--text-muted); display: flex; flex-direction: column; gap: 4px; }
+.review-form input { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+
+/* ---------- 评测对比（差异高亮） ---------- */
+.diff-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 12px; }
+.diff-col { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.diff-head { padding: 8px 12px; background: #f8fafc; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 13px; }
+.diff-body { max-height: 460px; overflow: auto; font-size: 12.5px; line-height: 1.7; font-family: Consolas, "Microsoft YaHei", monospace; }
+.diff-body .dl { padding: 2px 10px; border-bottom: 1px dashed #eef2f7; white-space: pre-wrap; word-break: break-all; }
+.dl-equal { color: #334155; }
+.dl-replace { background: #fef3c7; color: #92400e; }
+.dl-delete { background: #fee2e2; color: #991b1b; }
+.dl-insert { background: #dbeafe; color: #1e40af; }
+.dl-empty { color: #94a3b8; font-style: italic; background: #f8fafc; }
+.diff-legend { margin-top: 10px; }
+.diff-legend .lg { display: inline-block; padding: 1px 8px; border-radius: 4px; margin-right: 8px; font-size: 12px; }
+.lg-equal { background: #f1f5f9; }
+.lg-replace { background: #fef3c7; color: #92400e; }
+.lg-delete { background: #fee2e2; color: #991b1b; }
+.lg-insert { background: #dbeafe; color: #1e40af; }
+
+@media (max-width: 900px) {
+  .review-grid, .review-cols, .diff-grid, .review-form { grid-template-columns: 1fr; }
+}
+
 /* ---------- 架构页 ---------- */
 .arch-img { width: 100%; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 16px; }
 .arch-layers { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }

@@ -19,12 +19,14 @@
   const DOTS_ENDPOINT = "https://note3-prev-api.askdiandian.com/v1/messages";
   const DOTS_MODEL = "dots3-note-prev";
   const DOTS_DEFAULT_KEY = "ak_tB2hcaRu9cS8jr1dWcQwaYy1ZawY1";
+  const REVIEW_TOKEN_KEY = "ocr_web_review_token";
 
   // ---------- 状态管理（前端状态 store） ----------
   const store = {
     apiBase: localStorage.getItem(API_KEY) || (location.protocol.startsWith("http") ? location.origin : ""),
     engine: localStorage.getItem(ENGINE_KEY) || "dots",
     dotsApiKey: localStorage.getItem(DOTS_KEY) || "",
+    reviewToken: localStorage.getItem(REVIEW_TOKEN_KEY) || "",
     imageFile: null,
     videoFile: null,
     history: JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]"),
@@ -59,7 +61,8 @@
       v.classList.toggle("active", v.id === "view-" + route)
     );
     history.replaceState(null, "", "#" + route);
-    if (route === "data") loadReviewData();
+    if (route === "data") { loadReviewData(); loadPendingList(); }
+    if (route === "eval") loadEvalRecords();
   }
   $$(".nav-tab").forEach((b) =>
     b.addEventListener("click", () => navigate(b.dataset.route))
@@ -532,6 +535,8 @@
   function renderReviewRows(items) {
     const tb = $("#dataTableBody");
     $("#dataTableWrap").style.display = items.length ? "" : "none";
+    const empty = $("#dataTableEmpty");
+    if (empty) empty.style.display = items.length ? "none" : "";
     tb.innerHTML = items
       .map(
         (r) => `<tr>
@@ -565,6 +570,194 @@
     URL.revokeObjectURL(a.href);
   });
 
+  // ---------- 审核台：填写标准结果 ----------
+  let currentReviewId = null;
+
+  async function loadPendingList() {
+    const ul = $("#pendingList");
+    if (!ul) return;
+    try {
+      const res = await fetch(apiBase() + "/api/review/pending?page=1&page_size=50");
+      const body = await res.json();
+      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+      const items = (body.data && body.data.items) || [];
+      $("#pendingCount").textContent = (body.data && body.data.total) ?? items.length;
+      ul.innerHTML = items.length
+        ? items
+            .map(
+              (r) => `
+            <li data-id="${r.id}">
+              <span class="r-name">${esc(r.file_name)}</span>
+              <span class="r-meta">${esc(r.engine || "")} · ${esc(r.created_at || "")}</span>
+            </li>`
+            )
+            .join("")
+        : '<li class="hint">暂无待审核记录</li>';
+      ul.querySelectorAll("li[data-id]").forEach((li) =>
+        li.addEventListener("click", () => selectReviewRecord(+li.dataset.id))
+      );
+    } catch (e) {
+      ul.innerHTML = `<li class="hint">读取失败：${esc(e.message)}</li>`;
+    }
+  }
+
+  async function selectReviewRecord(id) {
+    currentReviewId = id;
+    $$("#pendingList li").forEach((li) => li.classList.toggle("active", +li.dataset.id === id));
+    $("#reviewEmpty").classList.add("hidden");
+    $("#reviewBody").classList.remove("hidden");
+    $("#reviewImage").src = apiBase() + "/api/review/" + id + "/file";
+    $("#reviewText").value = "加载中…";
+    try {
+      const res = await fetch(apiBase() + "/api/review/" + id);
+      const body = await res.json();
+      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+      const d = body.data || {};
+      $("#reviewMeta").textContent = `#${d.id} · ${d.file_name} · 引擎 ${d.engine || "-"} · 模式 ${d.mode || "-"} · ${d.created_at || ""}`;
+      $("#reviewText").value = d.raw_text || "";
+    } catch (e) {
+      $("#reviewText").value = "读取失败：" + e.message;
+    }
+  }
+
+  async function submitReview(status) {
+    if (!currentReviewId) { showToast("请先在左侧选择一条记录", "error"); return; }
+    const token = (store.reviewToken || "").trim();
+    if (!token) { showToast("请先在「关于」页填写并保存审核令牌", "error"); return; }
+    const payload = {
+      record_id: currentReviewId,
+      status,
+      reviewed_text: $("#reviewText").value,
+      reviewed_by: ($("#reviewUser").value || "").trim() || "reviewer",
+      review_note: ($("#reviewNote").value || "").trim(),
+    };
+    try {
+      const res = await fetch(apiBase() + "/api/review/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Review-Token": token },
+        body: JSON.stringify(payload),
+      });
+      let body = {};
+      try { body = await res.json(); } catch { throw new Error("后端返回非 JSON（HTTP " + res.status + "）"); }
+      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+      showToast(status === "approved" ? "已通过：标准结果已存入可信知识库" : "已拒绝", "success");
+      currentReviewId = null;
+      $("#reviewBody").classList.add("hidden");
+      $("#reviewEmpty").classList.remove("hidden");
+      await Promise.all([loadPendingList(), loadReviewData()]);
+    } catch (e) {
+      showToast("提交失败：" + e.message, "error");
+    }
+  }
+
+  $("#btnApprove").addEventListener("click", () => submitReview("approved"));
+  $("#btnReject").addEventListener("click", () => submitReview("rejected"));
+
+  // ---------- 评测对比（识别结果 vs 标准结果） ----------
+  async function loadEvalRecords() {
+    const sel = $("#evalRecord");
+    if (!sel) return;
+    try {
+      const res = await fetch(apiBase() + "/api/eval/records?limit=200");
+      const body = await res.json();
+      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+      const items = (body.data && body.data.items) || [];
+      sel.innerHTML = items.length
+        ? items
+            .map((r) => `<option value="${r.record_id}">#${r.record_id} · ${esc(r.file_name)} · ${esc(r.engine || "")}</option>`)
+            .join("")
+        : '<option value="">（暂无已填写标准结果的样本）</option>';
+      $("#evalHint").textContent = items.length
+        ? `共 ${items.length} 个可评测样本，选择后点击「开始对比」。`
+        : "还没有已审核并填写标准结果的记录——请先在「数据审核」→「审核台」填写标准结果。";
+    } catch (e) {
+      sel.innerHTML = '<option value="">读取失败</option>';
+      $("#evalHint").textContent = "读取失败：" + e.message;
+    }
+  }
+
+  async function runEvalCompare() {
+    const id = $("#evalRecord").value;
+    if (!id) { showToast("请先选择样本", "error"); return; }
+    try {
+      const res = await fetch(apiBase() + "/api/review/" + id + "/compare");
+      const body = await res.json();
+      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+      const d = body.data || {};
+      $("#evalAccuracy").textContent = (((d.char_accuracy || 0) * 100).toFixed(2)) + "%";
+      $("#evalSimilarity").textContent = (((d.similarity || 0) * 100).toFixed(2)) + "%";
+      $("#evalDistance").textContent = d.edit_distance ?? "–";
+      $("#evalLineMatch").textContent = (((d.line_match_rate || 0) * 100).toFixed(2)) + "%";
+      $("#evalMetrics").style.display = "";
+      renderLineDiff(d.line_diff || []);
+      $("#diffGrid").classList.remove("hidden");
+      $("#evalHint").textContent = `样本 #${d.record_id} · ${d.file_name} · 引擎 ${d.engine || "-"} · 标准 ${d.standard_chars || 0} 字 / 识别 ${d.recognized_chars || 0} 字 · 行匹配 ${d.matched_lines || 0}/${d.standard_lines || 0}`;
+    } catch (e) {
+      showToast("对比失败：" + e.message, "error");
+    }
+  }
+
+  function renderLineDiff(ops) {
+    const left = [];
+    const right = [];
+    ops.forEach((op) => {
+      const stdLines = op.standard || [];
+      const recLines = op.recognized || [];
+      if (op.tag === "equal") {
+        stdLines.forEach((line) => left.push(`<div class="dl dl-equal">${esc(line)}</div>`));
+        recLines.forEach((line) => right.push(`<div class="dl dl-equal">${esc(line)}</div>`));
+      } else if (op.tag === "replace") {
+        const n = Math.max(stdLines.length, recLines.length);
+        for (let i = 0; i < n; i++) {
+          left.push(`<div class="dl dl-replace">${esc(stdLines[i] ?? "")}</div>`);
+          right.push(`<div class="dl dl-replace">${esc(recLines[i] ?? "")}</div>`);
+        }
+      } else if (op.tag === "delete") {
+        stdLines.forEach((line) => {
+          left.push(`<div class="dl dl-delete">${esc(line)}</div>`);
+          right.push(`<div class="dl dl-empty">（识别缺失）</div>`);
+        });
+      } else if (op.tag === "insert") {
+        recLines.forEach((line) => {
+          right.push(`<div class="dl dl-insert">${esc(line)}</div>`);
+          left.push(`<div class="dl dl-empty">（标准无此行）</div>`);
+        });
+      }
+    });
+    $("#diffRecognized").innerHTML = right.join("") || '<div class="dl">（无内容）</div>';
+    $("#diffStandard").innerHTML = left.join("") || '<div class="dl">（无内容）</div>';
+  }
+
+  async function loadEvalSummary() {
+    try {
+      const res = await fetch(apiBase() + "/api/eval/summary");
+      const body = await res.json();
+      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+      const d = body.data || {};
+      const engines = d.engines || [];
+      $("#evalSummaryBody").innerHTML = engines.length
+        ? engines
+            .map(
+              (e) => `<tr>
+            <td>${esc(e.engine)}</td>
+            <td>${e.samples}</td>
+            <td>${(e.avg_char_accuracy * 100).toFixed(2)}%</td>
+            <td>${(e.best * 100).toFixed(2)}%</td>
+            <td>${(e.worst * 100).toFixed(2)}%</td>
+          </tr>`
+            )
+            .join("")
+        : '<tr><td colspan="5">暂无已填写标准结果的样本</td></tr>';
+      $("#evalSummaryHint").textContent = `共 ${d.sample_total || 0} 个样本，整体平均字符准确率 ${(((d.overall_char_accuracy || 0) * 100).toFixed(2))}%`;
+    } catch (e) {
+      $("#evalSummaryBody").innerHTML = `<tr><td colspan="5">读取失败：${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  $("#btnEvalRun").addEventListener("click", runEvalCompare);
+  $("#btnEvalReload").addEventListener("click", loadEvalRecords);
+  $("#btnEvalSummary").addEventListener("click", loadEvalSummary);
+
   // ---------- 关于页：API 配置 ----------
   $("#btnSaveApi").addEventListener("click", () => {
     store.apiBase = $("#apiBase").value.trim();
@@ -577,6 +770,16 @@
   // 初始化 API 输入框
   $("#apiBase").value = store.apiBase;
   updateConn(false);
+
+  // 审核令牌（仅存本机浏览器，用于提交审核）
+  $("#reviewTokenInput").value = store.reviewToken;
+  $("#reviewTokenHint").textContent = store.reviewToken ? "已保存审核令牌（仅本机）" : "尚未配置审核令牌：审核台的通过/拒绝会提交失败。";
+  $("#btnSaveReviewToken").addEventListener("click", () => {
+    store.reviewToken = $("#reviewTokenInput").value.trim();
+    localStorage.setItem(REVIEW_TOKEN_KEY, store.reviewToken);
+    $("#reviewTokenHint").textContent = store.reviewToken ? "已保存审核令牌（仅本机）" : "已清除审核令牌。";
+    showToast("审核令牌已保存", "success");
+  });
 
   // ---------- 关于页：识别引擎切换（本地 OCR / Dots AI） ----------
   function applyEngineUI() {

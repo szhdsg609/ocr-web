@@ -22,6 +22,7 @@
       <button class="nav-tab active" data-route="image">🖼️ 图片识别</button>
       <button class="nav-tab" data-route="video">🎬 视频识别</button>
       <button class="nav-tab" data-route="data">🗄️ 数据审核</button>
+      <button class="nav-tab" data-route="eval">🔬 评测对比</button>
       <button class="nav-tab" data-route="architecture">🏗️ 系统架构</button>
       <button class="nav-tab" data-route="about">📘 关于</button>
     </nav>
@@ -161,14 +162,113 @@
           <button class="btn ghost" id="btnDataExport">⬇️ 导出 CSV</button>
         </div>
         <p class="hint" id="dataHint">点击「刷新数据」从后端读取审核统计与已通过记录。</p>
+      </div>
+
+      <!-- 审核台：填写标准结果 -->
+      <div class="card">
+        <div class="card-head">
+          <h2>✍️ 审核台（填写标准结果）</h2>
+          <p class="desc">选择待审核记录 → 对照原图修正文本 → 通过后作为「标准结果」存入可信知识库，同时用于评测对比</p>
+        </div>
+        <div class="review-grid">
+          <div class="review-list">
+            <div class="review-list-head">待审核 <span class="badge" id="pendingCount">0</span></div>
+            <ul id="pendingList"><li class="hint">加载中…</li></ul>
+          </div>
+          <div class="review-panel">
+            <p class="hint" id="reviewEmpty">← 左侧点击一条待审核记录开始审核</p>
+            <div id="reviewBody" class="hidden">
+              <p class="review-meta" id="reviewMeta"></p>
+              <div class="review-cols">
+                <div class="review-col">
+                  <div class="review-col-title">原图</div>
+                  <img id="reviewImage" alt="待审核原始图片" />
+                </div>
+                <div class="review-col">
+                  <div class="review-col-title">识别文本（编辑为<b>标准结果</b>）</div>
+                  <textarea id="reviewText" rows="14"></textarea>
+                </div>
+              </div>
+              <div class="review-form">
+                <label>审核人<input type="text" id="reviewUser" placeholder="你的名字" /></label>
+                <label>备注<input type="text" id="reviewNote" placeholder="可留空" /></label>
+              </div>
+              <div class="action-row">
+                <button class="btn primary" id="btnApprove">✅ 通过（保存标准结果）</button>
+                <button class="btn ghost" id="btnReject">❌ 拒绝</button>
+              </div>
+              <p class="hint">提交需在「关于」页配置审核令牌（REVIEW_TOKEN）。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 已通过记录 -->
+      <div class="card">
+        <div class="card-head"><h2>📋 已通过记录</h2></div>
         <div class="table-wrap" id="dataTableWrap" style="display:none">
           <table id="dataTable">
             <thead>
-              <tr><th>审核时间</th><th>文件名</th><th>引擎</th><th>审核人</th><th>校正文本</th></tr>
+              <tr><th>审核时间</th><th>文件名</th><th>引擎</th><th>审核人</th><th>标准结果（校正文本）</th></tr>
             </thead>
             <tbody id="dataTableBody"></tbody>
           </table>
         </div>
+        <p class="hint" id="dataTableEmpty">暂无已通过记录。</p>
+      </div>
+    </section>
+
+    <!-- 评测对比视图 -->
+    <section id="view-eval" class="view">
+      <div class="card">
+        <div class="card-head">
+          <h2>🔬 评测对比</h2>
+          <p class="desc">对比 OCR 识别结果与人工标准结果，输出准确率指标与逐行差异</p>
+        </div>
+        <div class="form-grid">
+          <label>选择样本（已填写标准结果的记录）
+            <select id="evalRecord"></select>
+          </label>
+        </div>
+        <div class="action-row">
+          <button class="btn primary" id="btnEvalRun">▶️ 开始对比</button>
+          <button class="btn ghost" id="btnEvalReload">🔄 刷新样本列表</button>
+        </div>
+        <div class="data-stats" id="evalMetrics" style="display:none">
+          <div class="stat-card"><span class="stat-num" id="evalAccuracy">–</span><span class="stat-label">字符准确率</span></div>
+          <div class="stat-card"><span class="stat-num" id="evalSimilarity">–</span><span class="stat-label">相似度</span></div>
+          <div class="stat-card"><span class="stat-num" id="evalDistance">–</span><span class="stat-label">编辑距离</span></div>
+          <div class="stat-card"><span class="stat-num" id="evalLineMatch">–</span><span class="stat-label">行匹配率</span></div>
+        </div>
+        <p class="hint" id="evalHint">请选择样本后点击「开始对比」。</p>
+        <div class="diff-grid hidden" id="diffGrid">
+          <div class="diff-col">
+            <div class="diff-head">识别结果（OCR 原始）</div>
+            <div class="diff-body" id="diffRecognized"></div>
+          </div>
+          <div class="diff-col">
+            <div class="diff-head">标准结果（人工填写）</div>
+            <div class="diff-body" id="diffStandard"></div>
+          </div>
+        </div>
+        <p class="diff-legend hint">图例：<span class="lg lg-equal">一致</span><span class="lg lg-replace">不同</span><span class="lg lg-delete">标准有/识别缺</span><span class="lg lg-insert">识别多出</span></p>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>📊 批量评测总览</h2>
+          <p class="desc">按引擎聚合所有已审核样本的平均字符准确率</p>
+        </div>
+        <div class="table-wrap">
+          <table id="evalSummaryTable">
+            <thead><tr><th>引擎</th><th>样本数</th><th>平均字符准确率</th><th>最好</th><th>最差</th></tr></thead>
+            <tbody id="evalSummaryBody"><tr><td colspan="5">点击下方按钮计算</td></tr></tbody>
+          </table>
+        </div>
+        <div class="action-row">
+          <button class="btn" id="btnEvalSummary">🔄 刷新总览</button>
+        </div>
+        <p class="hint" id="evalSummaryHint"></p>
       </div>
     </section>
 
@@ -243,6 +343,13 @@
             <button class="btn ghost" id="btnTestApi">测试连接</button>
           </div>
           <p class="hint" id="apiHint"></p>
+          <h3>🔐 审核令牌</h3>
+          <p>填写后端 <code>REVIEW_TOKEN</code> 后才能提交审核（通过 / 拒绝）。仅存本机浏览器。</p>
+          <div class="api-row">
+            <input type="password" id="reviewTokenInput" placeholder="审核令牌（REVIEW_TOKEN）" />
+            <button class="btn" id="btnSaveReviewToken">保存令牌</button>
+          </div>
+          <p class="hint" id="reviewTokenHint"></p>
         </div>
       </div>
     </section>
