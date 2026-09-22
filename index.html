@@ -171,17 +171,24 @@
       <div class="card">
         <div class="card-head">
           <h2>✍️ 审核台（填写标准结果）</h2>
-          <p class="desc">选择待审核记录 → 对照原图修正文本 → 通过后作为「标准结果」存入可信知识库，同时用于评测对比</p>
+          <p class="desc">选择记录 → 对照原图修正文本 → 通过后作为「标准结果」存入可信知识库。已审核过的记录可随时重新打开修改或改判（每次提交均需审核令牌）。</p>
         </div>
         <div class="review-grid">
           <div class="review-list">
-            <div class="review-list-head">待审核 <span class="badge" id="pendingCount">0</span></div>
+            <div class="review-filters">
+              <button class="chip active" data-status="pending">待审核</button>
+              <button class="chip" data-status="approved">已通过</button>
+              <button class="chip" data-status="rejected">已拒绝</button>
+              <button class="chip" data-status="all">全部</button>
+            </div>
+            <div class="review-list-head"><span id="listFilterLabel">待审核</span> <span class="badge" id="pendingCount">0</span></div>
             <ul id="pendingList"><li class="hint">加载中…</li></ul>
           </div>
           <div class="review-panel">
-            <p class="hint" id="reviewEmpty">← 左侧点击一条待审核记录开始审核</p>
+            <p class="hint" id="reviewEmpty">← 左侧点击一条记录开始审核（已审核的也可重新打开修改）</p>
             <div id="reviewBody" class="hidden">
               <p class="review-meta" id="reviewMeta"></p>
+              <p class="hint" id="reviewStatusHint"></p>
               <div class="review-cols">
                 <div class="review-col">
                   <div class="review-col-title">原图</div>
@@ -200,7 +207,7 @@
                 <button class="btn primary" id="btnApprove">✅ 通过（保存标准结果）</button>
                 <button class="btn ghost" id="btnReject">❌ 拒绝</button>
               </div>
-              <p class="hint">提交需在「关于」页配置审核令牌（REVIEW_TOKEN）。</p>
+              <p class="hint">提交需在「关于」页配置审核令牌（REVIEW_TOKEN）。同一记录可反复提交：通过后仍可再改判为拒绝，反之亦然。</p>
             </div>
           </div>
         </div>

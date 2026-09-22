@@ -19,6 +19,10 @@
   const DOTS_ENDPOINT = "https://note3-prev-api.askdiandian.com/v1/messages";
   const DOTS_MODEL = "dots3-note-prev";
   const DOTS_DEFAULT_KEY = "ak_tB2hcaRu9cS8jr1dWcQwaYy1ZawY1";
+
+  // 审核台状态筛选（声明必须提前：navigate() 在初始化阶段就会读这两个值）
+  const REVIEW_STATUS_LABEL = { pending: "待审核", approved: "已通过", rejected: "已拒绝" };
+  let reviewFilter = "pending";
   const REVIEW_TOKEN_KEY = "ocr_web_review_token";
 
   // ---------- 状态管理（前端状态 store） ----------
@@ -647,11 +651,23 @@
   // ---------- 审核台：填写标准结果 ----------
   let currentReviewId = null;
 
-  async function loadPendingList() {
+  function syncReviewFilterUI() {
+    $$(".review-filters .chip").forEach((b) =>
+      b.classList.toggle("active", b.dataset.status === reviewFilter)
+    );
+    const label = $("#listFilterLabel");
+    if (label) label.textContent = reviewFilter === "all" ? "全部记录" : REVIEW_STATUS_LABEL[reviewFilter];
+  }
+
+  async function loadPendingList(status) {
     const ul = $("#pendingList");
     if (!ul) return;
+    if (status) reviewFilter = status;
+    syncReviewFilterUI();
     try {
-      const body = await apiFetch("/api/review/pending?page=1&page_size=50");
+      const body = await apiFetch(
+        "/api/review/pending?status=" + encodeURIComponent(reviewFilter) + "&page=1&page_size=50"
+      );
       const items = (body.data && body.data.items) || [];
       $("#pendingCount").textContent = (body.data && body.data.total) ?? items.length;
       ul.innerHTML = items.length
@@ -660,11 +676,11 @@
               (r) => `
             <li data-id="${r.id}">
               <span class="r-name">${esc(r.file_name)}</span>
-              <span class="r-meta">${esc(r.engine || "")} · ${esc(r.created_at || "")}</span>
+              <span class="r-meta"><span class="status-chip ${esc(r.status || "")}">${esc(REVIEW_STATUS_LABEL[r.status] || r.status || "-")}</span>${esc(r.engine || "")} · ${esc(r.created_at || "")}</span>
             </li>`
             )
             .join("")
-        : '<li class="hint">暂无待审核记录</li>';
+        : '<li class="hint">该分类下暂无记录</li>';
       ul.querySelectorAll("li[data-id]").forEach((li) =>
         li.addEventListener("click", () => selectReviewRecord(+li.dataset.id))
       );
@@ -689,8 +705,17 @@
     try {
       const body = await apiFetch("/api/review/" + id);
       const d = body.data || {};
+      const statusText = REVIEW_STATUS_LABEL[d.status] || d.status || "-";
       $("#reviewMeta").textContent = `#${d.id} · ${d.file_name} · 引擎 ${d.engine || "-"} · 模式 ${d.mode || "-"} · ${d.created_at || ""}`;
-      $("#reviewText").value = d.raw_text || "";
+      const hint = $("#reviewStatusHint");
+      if (hint) {
+        hint.textContent =
+          d.status === "pending"
+            ? `当前状态：${statusText}`
+            : `当前状态：${statusText}（${d.reviewer || "-"} · ${d.reviewed_at || "-"}）· 可修改后重新提交或改判`;
+      }
+      // 已审核记录回填「标准结果」便于直接修改；未审核则回填原始识别文本
+      $("#reviewText").value = d.corrected_text || d.raw_text || "";
     } catch (e) {
       $("#reviewText").value = "读取失败：" + e.message;
     }
@@ -708,20 +733,32 @@
       review_note: ($("#reviewNote").value || "").trim(),
     };
     try {
-      await apiFetch("/api/review/submit", {
+      const body = await apiFetch("/api/review/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Review-Token": token },
         body: JSON.stringify(payload),
       });
-      showToast(status === "approved" ? "已通过：标准结果已存入可信知识库" : "已拒绝", "success");
-      currentReviewId = null;
-      $("#reviewBody").classList.add("hidden");
-      $("#reviewEmpty").classList.remove("hidden");
+      showToast(body.message || (status === "approved" ? "已通过" : "已拒绝"), "success");
       await Promise.all([loadPendingList(), loadReviewData()]);
+      // 记录若仍在当前筛选列表中则保持选中，方便继续修改或改判
+      const stillListed = Array.from($$("#pendingList li[data-id]")).some(
+        (li) => +li.dataset.id === currentReviewId
+      );
+      if (stillListed) {
+        await selectReviewRecord(currentReviewId);
+      } else {
+        currentReviewId = null;
+        $("#reviewBody").classList.add("hidden");
+        $("#reviewEmpty").classList.remove("hidden");
+      }
     } catch (e) {
       showToast("提交失败：" + e.message, "error");
     }
   }
+
+  $$(".review-filters .chip").forEach((btn) =>
+    btn.addEventListener("click", () => loadPendingList(btn.dataset.status))
+  );
 
   $("#btnApprove").addEventListener("click", () => submitReview("approved"));
   $("#btnReject").addEventListener("click", () => submitReview("rejected"));
