@@ -226,7 +226,14 @@
       if (store.engine === "dots") {
         // Dots AI 引擎：图片 base64 直接调 dots3-note 多模态模型
         text = await dotsRecognize(store.imageFile);
-        showToast("Dots AI 识别完成", "success");
+        // 识别结果与原图同步进入后端审核队列，使数据审核/评测对比跟着更新
+        const saved = await importToReviewQueue(store.imageFile, text, DOTS_MODEL);
+        showToast(
+          saved
+            ? "Dots AI 识别完成，已进入审核队列（记录 #" + saved.record_id + "）"
+            : "Dots AI 识别完成（未配置后端，未进入审核队列）",
+          "success"
+        );
       } else if (apiBase()) {
         // 本项目后端（Flask → OCR 微服务）：识别结果自动写入数据库审核队列
         const form = new FormData();
@@ -309,6 +316,24 @@
       r.onerror = () => reject(new Error("读取图片失败"));
       r.readAsDataURL(file);
     });
+  }
+
+  // 把前端直连识别结果（含原图）导入后端审核队列，
+  // 保证「数据审核 / 审核台 / 评测对比」与识别过的图片数量同步
+  async function importToReviewQueue(file, text, engine) {
+    if (!apiBase() || !file || !text) return null;
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("text", text);
+      form.append("engine", engine || "frontend-direct");
+      form.append("mode", "standard");
+      const body = await apiFetch("/api/review/import", { method: "POST", body: form });
+      return body.data || null;
+    } catch (e) {
+      console.warn("导入审核队列失败：", e.message);
+      return null;
+    }
   }
 
   // ---------- 视频抽帧 + Dots 逐帧识别（浏览器端完成，无需本地后端） ----------
