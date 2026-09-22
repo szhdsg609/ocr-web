@@ -33,11 +33,47 @@
     dataRows: [],
   };
 
-  // 后端 API 基地址（默认与当前访问地址同源，经网关转发；也可在「关于」页手动指定）
+  // 后端 API 基地址：
+  // - 「关于」页手动配置优先（GitHub Pages 等纯静态托管必须配置）
+  // - 未配置时：经 8082 网关（同源有 /api 反代）可用同源
   function apiBase() {
     const configured = (store.apiBase || "").replace(/\/+$/, "");
     if (configured) return configured;
+    if (/\.github\.io$/i.test(location.hostname)) return ""; // 静态托管无后端
     return location.protocol.startsWith("http") ? location.origin : "";
+  }
+
+  const NO_BACKEND_HINT =
+    "未配置后端地址。当前页面是纯静态托管（GitHub Pages），没有 /api 接口；" +
+    "请在「关于」页填写后端地址（本机网关 http://127.0.0.1:8082，或云端地址）后重试。";
+
+  // 统一后端请求：自动处理「未配置」「返回网页而非 JSON」等情况，给出可读提示
+  async function apiFetch(path, options) {
+    const base = apiBase();
+    if (!base) throw new Error(NO_BACKEND_HINT);
+    let res;
+    try {
+      res = await fetch(base + path, options);
+    } catch (e) {
+      throw new Error("无法连接后端（" + base + "）：" + e.message);
+    }
+    const raw = await res.text();
+    let body;
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      const isHtml = (res.headers.get("content-type") || "").includes("html");
+      throw new Error(
+        "后端返回的不是 JSON（HTTP " + res.status + "）。" +
+          (isHtml
+            ? "该地址返回的是网页，说明它不是 OCR 后端——请在「关于」页检查后端地址。"
+            : "请确认后端服务是否正常运行。")
+      );
+    }
+    if (!res.ok || (body && typeof body.code !== "undefined" && body.code !== 0)) {
+      throw new Error((body && body.message) || ("HTTP " + res.status));
+    }
+    return body;
   }
 
   // ---------- DOM 工具 ----------
@@ -195,10 +231,7 @@
         form.append("engine", "paddle_mobile");
         form.append("mode", "standard");
         form.append("options", "{}");
-        const res = await fetch(apiBase() + "/api/ocr", { method: "POST", body: form });
-        let body = {};
-        try { body = await res.json(); } catch { throw new Error("后端返回非 JSON（HTTP " + res.status + "）"); }
-        if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+        const body = await apiFetch("/api/ocr", { method: "POST", body: form });
         text = (body.data && body.data.result && body.data.result.text) || "（后端未返回文本）";
         showToast("识别完成，已进入审核队列（记录 #" + (body.data && body.data.record_id) + "）", "success");
       } else {
@@ -508,10 +541,7 @@
     const hint = $("#dataHint");
     hint.textContent = "正在读取后端数据…";
     try {
-      const statsRes = await fetch(apiBase() + "/api/review/stats");
-      let statsBody = {};
-      try { statsBody = await statsRes.json(); } catch { throw new Error("后端返回非 JSON（HTTP " + statsRes.status + "）"); }
-      if (!statsRes.ok || statsBody.code !== 0) throw new Error(statsBody.message || ("HTTP " + statsRes.status));
+      const statsBody = await apiFetch("/api/review/stats");
       const s = statsBody.data || {};
       $("#statPending").textContent = s.pending ?? 0;
       $("#statApproved").textContent = s.approved ?? 0;
@@ -519,16 +549,13 @@
       $("#statKnowledge").textContent = s.knowledge ?? 0;
       $("#statTotal").textContent = s.total ?? 0;
 
-      const histRes = await fetch(apiBase() + "/api/review/history?status=approved&limit=50");
-      let histBody = {};
-      try { histBody = await histRes.json(); } catch { throw new Error("后端返回非 JSON（HTTP " + histRes.status + "）"); }
-      if (!histRes.ok || histBody.code !== 0) throw new Error(histBody.message || ("HTTP " + histRes.status));
+      const histBody = await apiFetch("/api/review/history?status=approved&limit=50");
       const items = (histBody.data && histBody.data.items) || [];
       store.dataRows = items;
       renderReviewRows(items);
       hint.textContent = "已读取 " + items.length + " 条已通过记录（共 " + ((histBody.data && histBody.data.total) ?? items.length) + " 条）。";
     } catch (e) {
-      hint.textContent = "读取失败：" + e.message + "（请确认后端服务已启动，「关于」页的 API 地址是否正确）";
+      hint.textContent = "读取失败：" + e.message;
     }
   }
 
@@ -577,9 +604,7 @@
     const ul = $("#pendingList");
     if (!ul) return;
     try {
-      const res = await fetch(apiBase() + "/api/review/pending?page=1&page_size=50");
-      const body = await res.json();
-      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+      const body = await apiFetch("/api/review/pending?page=1&page_size=50");
       const items = (body.data && body.data.items) || [];
       $("#pendingCount").textContent = (body.data && body.data.total) ?? items.length;
       ul.innerHTML = items.length
@@ -606,12 +631,10 @@
     $$("#pendingList li").forEach((li) => li.classList.toggle("active", +li.dataset.id === id));
     $("#reviewEmpty").classList.add("hidden");
     $("#reviewBody").classList.remove("hidden");
-    $("#reviewImage").src = apiBase() + "/api/review/" + id + "/file";
+    $("#reviewImage").src = (apiBase() || "") + "/api/review/" + id + "/file";
     $("#reviewText").value = "加载中…";
     try {
-      const res = await fetch(apiBase() + "/api/review/" + id);
-      const body = await res.json();
-      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+      const body = await apiFetch("/api/review/" + id);
       const d = body.data || {};
       $("#reviewMeta").textContent = `#${d.id} · ${d.file_name} · 引擎 ${d.engine || "-"} · 模式 ${d.mode || "-"} · ${d.created_at || ""}`;
       $("#reviewText").value = d.raw_text || "";
@@ -632,14 +655,11 @@
       review_note: ($("#reviewNote").value || "").trim(),
     };
     try {
-      const res = await fetch(apiBase() + "/api/review/submit", {
+      await apiFetch("/api/review/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Review-Token": token },
         body: JSON.stringify(payload),
       });
-      let body = {};
-      try { body = await res.json(); } catch { throw new Error("后端返回非 JSON（HTTP " + res.status + "）"); }
-      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
       showToast(status === "approved" ? "已通过：标准结果已存入可信知识库" : "已拒绝", "success");
       currentReviewId = null;
       $("#reviewBody").classList.add("hidden");
@@ -658,9 +678,7 @@
     const sel = $("#evalRecord");
     if (!sel) return;
     try {
-      const res = await fetch(apiBase() + "/api/eval/records?limit=200");
-      const body = await res.json();
-      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+      const body = await apiFetch("/api/eval/records?limit=200");
       const items = (body.data && body.data.items) || [];
       sel.innerHTML = items.length
         ? items
@@ -680,9 +698,7 @@
     const id = $("#evalRecord").value;
     if (!id) { showToast("请先选择样本", "error"); return; }
     try {
-      const res = await fetch(apiBase() + "/api/review/" + id + "/compare");
-      const body = await res.json();
-      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+      const body = await apiFetch("/api/review/" + id + "/compare");
       const d = body.data || {};
       $("#evalAccuracy").textContent = (((d.char_accuracy || 0) * 100).toFixed(2)) + "%";
       $("#evalSimilarity").textContent = (((d.similarity || 0) * 100).toFixed(2)) + "%";
@@ -730,9 +746,7 @@
 
   async function loadEvalSummary() {
     try {
-      const res = await fetch(apiBase() + "/api/eval/summary");
-      const body = await res.json();
-      if (!res.ok || body.code !== 0) throw new Error(body.message || ("HTTP " + res.status));
+      const body = await apiFetch("/api/eval/summary");
       const d = body.data || {};
       const engines = d.engines || [];
       $("#evalSummaryBody").innerHTML = engines.length
